@@ -149,7 +149,9 @@ var runtime = (function (exports) {
     return { __await: arg };
   };
 
-  function AsyncIterator(generator, PromiseImpl) {
+  function makeAsyncInvokeMethod(generator, PromiseImpl) {
+    if (PromiseImpl === undefined) PromiseImpl = Promise;
+
     function invoke(method, arg, resolve, reject) {
       var record = tryCatch(generator[method], generator, arg);
       if (record.type === "throw") {
@@ -183,7 +185,7 @@ var runtime = (function (exports) {
 
     var previousPromise;
 
-    function enqueue(method, arg) {
+    return function(method, arg) {
       function callInvokeWithMethodAndArg() {
         return new PromiseImpl(function(resolve, reject) {
           invoke(method, arg, resolve, reject);
@@ -210,10 +212,13 @@ var runtime = (function (exports) {
           callInvokeWithMethodAndArg
         ) : callInvokeWithMethodAndArg();
     }
+  }
+  exports.makeAsyncInvokeMethod = makeAsyncInvokeMethod;
 
+  function AsyncIterator(generator, PromiseImpl) {
     // Define the unified helper method that is used to implement .next,
     // .throw, and .return (see defineIteratorMethods).
-    this._invoke = enqueue;
+    this._invoke = makeAsyncInvokeMethod(generator, PromiseImpl);
   }
 
   defineIteratorMethods(AsyncIterator.prototype);
@@ -226,8 +231,6 @@ var runtime = (function (exports) {
   // AsyncIterator objects; they just return a Promise for the value of
   // the final result produced by the iterator.
   exports.async = function(innerFn, outerFn, self, tryLocsList, PromiseImpl) {
-    if (PromiseImpl === void 0) PromiseImpl = Promise;
-
     var iter = new AsyncIterator(
       wrap(innerFn, outerFn, self, tryLocsList),
       PromiseImpl
@@ -316,6 +319,11 @@ var runtime = (function (exports) {
         }
       }
     };
+  }
+
+  exports.makeInvokeMethod = function(innerFn, self, tryLocsList) {
+    var context = new Context(tryLocsList || []);
+    return makeInvokeMethod(innerFn, self, context);
   }
 
   // Call delegate.iterator[context.method](context.arg) and handle the
